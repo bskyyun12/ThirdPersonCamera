@@ -71,6 +71,8 @@ public class ThirdPersonCamera : MonoBehaviour
 	{
 		// Set initial rotation
 		cameraRotation = Quaternion.Euler(cameraEulerAngle);
+
+		Cursor.lockState = CursorLockMode.Locked;
 	}
 
 	// Make sure the camera movement happens after player's movement. Otherwise, the camera will jiggle.

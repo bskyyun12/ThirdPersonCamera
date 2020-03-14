@@ -5,6 +5,11 @@ public class PlayerControls : MonoBehaviour
 {
 	// Components
 	CharacterController controller;
+	public Transform groundDirection, fallDirection; // Todo: merge these two in one?
+
+	[Header("Debug")]
+	public bool showGroundNormal = true;
+	public bool showFallNormal = true;
 
 	[Header("Input Control")]
 	public Controls controls;
@@ -12,22 +17,51 @@ public class PlayerControls : MonoBehaviour
 	float turnAxis;
 	bool runInput = false;
 	bool jumpInput = false;
+	bool dashInput = false;
 
 	[Header("Movement")]
 	public bool ControlMovementInAir = false;
-	Vector3 velocity;
+	public float minVelocityY = -25f; // related to max fall speed
+	[SerializeField, Tooltip("Debug Only")] Vector3 velocity;
 
 	[Header("Speed")]
-	[SerializeField] float baseSpeed = 1f;
-	public float runSpeed = 3;
-	float currentSpeed = 0f;
+	[SerializeField] float baseSpeed = 5f;
+	public float runSpeed = 10f;
 	public float turnSpeed = 1f;
+	[SerializeField, Tooltip("Debug Only")] float currentSpeed = 0f;
 
 	[Header("Jump")]
-	public float jumpPower = 5f;
+	public float jumpHeight = 5f;
+	[SerializeField, Tooltip("Debug Only")] bool isJumping = false;
+
+	[Header("Dash")]
+	public float DashPower = 5f;
+	bool pressedOnce = false;
+	float time = 0f;
+	float timerLength = .5f;
 
 	[Header("Gravity")]
 	public float gravityScale = 5f;
+	float gravity = Physics.gravity.y;
+
+	// Slope
+	[SerializeField, Tooltip("Debug Only")] bool isSliding = false;
+	[SerializeField, Tooltip("Debug Only")] bool onSlope = false;
+	[SerializeField, Tooltip("Debug Only")] float fallSpeed;
+
+	// Ground
+	public float groundRayDistance = .2f;
+	Ray groundRay;
+	RaycastHit groundHit;
+	Vector3 forwardDirection;
+	Vector3 collisionPoint;
+	[SerializeField, Tooltip("Debug Only")] float slopeAngle;
+	[SerializeField, Tooltip("Debug Only")] float forwardAngle;
+	[SerializeField, Tooltip("Debug Only")] float forwardMultiplier;
+
+	// Impact
+	public float impactDamping = 5f;
+	Vector3 impact = Vector3.zero;
 
 	private void Awake()
 	{
@@ -43,69 +77,156 @@ public class PlayerControls : MonoBehaviour
 
 	void Move()
 	{
+		GroundDirection();
+		isSliding = slopeAngle > controller.slopeLimit;
+		onSlope = groundHit.normal != Vector3.up;
+
+		#region Calculate Speed
+		if (controller.isGrounded && !isSliding)
+		{
+			currentSpeed = baseSpeed;
+
+			if (runInput)
+			{ currentSpeed = runSpeed; }
+		}
+		#endregion Calculate Speed
+
+		#region Apply Gravity
+		if (!controller.isGrounded || isSliding)
+		{
+			if (velocity.y >= minVelocityY)
+			{
+				velocity.y += gravity * gravityScale * Time.deltaTime;
+				fallSpeed = Mathf.Abs(velocity.y);
+			}
+		}
+		#endregion Apply Gravity
+
+		// Jump
+		if (jumpInput && controller.isGrounded && !isSliding)
+		{
+			isJumping = true;
+			velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+			onSlope = false;
+		}
+
+		// Impact handle
+		if (impact.magnitude > .2f)
+		{
+			impact = Vector3.Lerp(impact, Vector3.zero, impactDamping * Time.deltaTime);
+			velocity += impact;
+		}
+
+		#region Calculate Velocity
+		// Disable move control on sliding
+		if (isSliding)
+		{ moveInput = Vector2.zero; }
+
+		float yStore = velocity.y;
+		if (ControlMovementInAir)
+		{
+			velocity = (groundDirection.forward * moveInput.y + groundDirection.right * moveInput.x) *
+						(currentSpeed * forwardMultiplier) + -fallDirection.up * fallSpeed;
+		}
+		else
+		{
+			if (controller.isGrounded)
+			{
+				velocity = (groundDirection.forward * moveInput.y + groundDirection.right * moveInput.x) *
+							(currentSpeed * forwardMultiplier) + -fallDirection.up * fallSpeed;
+			}
+		}
+
+		// Assign stored velocity.y only on ground or sharp slope
+		if (!onSlope || (onSlope && isSliding))
+		{ velocity.y = yStore; }
+		#endregion Calculate Velocity
+
+		// Move
+		controller.Move(velocity * Time.deltaTime);
+
+		// Turn
 		if (turnAxis != 0)
 		{ Turn(); }
-
-		GetVelocity();
 
 		// Ground Check
 		if (controller.isGrounded)
 		{
-			// Jump
-			if (jumpInput)
-			{ velocity.y = jumpPower; }
-		}
-		else
-		{
-			// Apply gravity
-			velocity.y += Physics.gravity.y * gravityScale * Time.deltaTime;
-		}
+			if (!isSliding)
+			{
+				velocity.y = -2f;
+				fallSpeed = 0f;
+			}
 
-		// Move
-		controller.Move(velocity * Time.deltaTime);
+			if (isJumping)
+			{ isJumping = false; }
+
+			// Dash
+			if (dashInput)
+			{
+				Debug.Log("Dash! - Needs to implement");
+				dashInput = false;
+				//AddImpact(transform.forward, DashPower);
+			}
+		}
+	}
+
+	void GroundDirection()
+	{
+		forwardDirection = transform.position + transform.forward;
+		forwardDirection.y -= controller.height * .5f;
+
+		groundDirection.LookAt(forwardDirection);
+		fallDirection.rotation = transform.rotation;
+
+		groundRay.origin = transform.position + collisionPoint + Vector3.up * 0.05f;
+		groundRay.direction = Vector3.down;
+
+		forwardMultiplier = 1f;
+
+		if (Physics.Raycast(groundRay, out groundHit, controller.height * .5f * groundRayDistance))
+		{
+			slopeAngle = Vector3.Angle(transform.up, groundHit.normal);
+			forwardAngle = Vector3.Angle(groundDirection.forward, groundHit.normal) - 90f;
+
+			// Rotate groundDirection
+			groundDirection.eulerAngles += new Vector3(-forwardAngle, 0f, 0f);
+
+			// When going down normal slope
+			if (forwardAngle < 0f && slopeAngle <= controller.slopeLimit)
+			{
+				forwardMultiplier = 1f / Mathf.Cos(forwardAngle * Mathf.Deg2Rad);
+			}
+			// When going down sharp slope
+			else if (slopeAngle > controller.slopeLimit)
+			{
+				float groundDistance = Vector3.Distance(groundRay.origin, groundHit.point);
+
+				if (groundDistance <= .1f)
+				{
+					Vector3 groundCross = Vector3.Cross(groundHit.normal, Vector3.up);
+					Vector3 slopeCross = Vector3.Cross(groundCross, groundHit.normal);
+					fallDirection.rotation = Quaternion.FromToRotation(transform.up, slopeCross);
+				}
+			}
+			// Todo: should the player be slower when going up slope?
+		}
+	}
+
+	public void AddImpact(Vector3 direction, float force)
+	{
+		direction.Normalize();
+		//if (direction.y < 0)
+		//{
+		//	direction.y *= -1f;
+		//}
+		impact += direction * force; // devide mass after multiplying force if there is a mass
 	}
 
 	private void Turn()
 	{
 		Vector3 characterRotation = transform.eulerAngles + new Vector3(0, turnAxis * turnSpeed, 0);
 		transform.eulerAngles = characterRotation;
-	}
-
-	/// <summary>
-	/// Get velocity with moveInput and currentSpeed.
-	/// This should be called before modifying velocity.y value.
-	/// </summary>
-	private void GetVelocity()
-	{
-		GetSpeed();
-		if (ControlMovementInAir)
-		{
-			float yStore = velocity.y;
-			velocity = (transform.forward * moveInput.y +
-						transform.right * moveInput.x);
-			velocity = velocity.normalized * currentSpeed;
-			velocity.y = yStore;
-		}
-		else
-		{
-			if (controller.isGrounded)
-			{
-				velocity = (transform.forward * moveInput.y +
-							transform.right * moveInput.x);
-				velocity = velocity.normalized * currentSpeed;
-			}
-		}
-	}
-
-	private void GetSpeed()
-	{
-		currentSpeed = baseSpeed;
-		if (runInput)
-		{ currentSpeed = runSpeed; }
-
-		// Speed decrease on walking backwards
-		//if (inputs.y < 0)
-		//	currentSpeed *= .5f;
 	}
 
 	void GetInput()
@@ -189,5 +310,57 @@ public class PlayerControls : MonoBehaviour
 			jumpInput = false;
 		}
 		#endregion Jump
+
+		#region Dash
+		if (Input.GetKeyDown(controls.forwards))
+		{
+			if (!pressedOnce)
+			{
+				pressedOnce = true;
+				time = Time.time;
+			}
+			else
+			{
+				dashInput = true;
+				pressedOnce = false;
+			}
+		}
+
+		if (pressedOnce)
+		{
+			if (Time.time - time > timerLength)
+			{
+				pressedOnce = false;
+			}
+		}
+
+		#endregion Dash
+	}
+
+	private void OnControllerColliderHit(ControllerColliderHit hit)
+	{
+		collisionPoint = hit.point;
+		collisionPoint = (collisionPoint - transform.position);
+	}
+
+	private void OnDrawGizmos()
+	{
+		// ground check
+		Gizmos.color = Color.red;
+		Gizmos.DrawRay(groundRay.origin, groundRay.direction * groundRayDistance);
+
+		// ground direction(character's move forward direction)
+		if (showGroundNormal)
+		{
+			Gizmos.color = Color.blue;
+			Gizmos.DrawRay(groundDirection.position, groundDirection.forward);
+		}
+
+		// fall direction
+		if (showFallNormal)
+		{
+			Gizmos.color = Color.green;
+			Gizmos.DrawRay(fallDirection.position, -fallDirection.up);
+		}
 	}
 }
