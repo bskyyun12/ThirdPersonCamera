@@ -9,7 +9,7 @@ public class ThirdPersonCamera : MonoBehaviour
 	const string mouseXId = "Mouse X";
 	const string mouseYId = "Mouse Y";
 	#endregion Input Ids
-	
+
 	Camera cam = null;
 	float currentCameraDistance;
 	float desiredCameraDistance = 8f;
@@ -19,7 +19,10 @@ public class ThirdPersonCamera : MonoBehaviour
 	Vector3 cameraFocusPosition;
 	Vector3 desiredCameraPosition;
 
-	// Camera Collision
+	[Header("Camera Collision")]
+	[SerializeField] bool smoothZoomInToCollisionPoint = false;
+	[SerializeField, Range(.01f, .5f)] float lerpSpeed = .175f;
+	float currentLerpTime;
 	bool boxCastHit;
 	RaycastHit hit;
 	Vector3 castDirection;
@@ -27,12 +30,12 @@ public class ThirdPersonCamera : MonoBehaviour
 
 	[Header("Camera Focus")]
 	public GameObject cameraFocus = null;
-	[Tooltip("This object will turn toward to camera's direction when mouse right button is pressed")] 
+	[Tooltip("This object will turn toward to camera's direction when mouse right button is pressed")]
 	public GameObject player = null;
 
 	[Header("Distance")]
 	[SerializeField, Range(0f, 20f)] float minCameraDistance = 2f;
-	[SerializeField, Range(1f, 20f)] float maxCameraDistance = 15f;
+	[SerializeField, Range(1f, 50f)] float maxCameraDistance = 35f;
 
 	[Header("Layer Filtering")]
 	[SerializeField] LayerMask whatToDetect = -1;
@@ -45,8 +48,8 @@ public class ThirdPersonCamera : MonoBehaviour
 
 	[Header("Zoom")]
 	[SerializeField] bool reverseZoom = true;
-	[SerializeField, Range(.01f, .5f)] float lerpSpeed = .1f;
-	[SerializeField, Range(1f, 50f)] float zoomSpeed = 10f;
+	[SerializeField] bool lerpZoom = false;
+	[SerializeField, Range(10f, 200f)] float zoomSpeed = 50f;
 
 	private void OnValidate()
 	{
@@ -72,11 +75,11 @@ public class ThirdPersonCamera : MonoBehaviour
 		// Set initial rotation
 		cameraRotation = Quaternion.Euler(cameraEulerAngle);
 
-		Cursor.lockState = CursorLockMode.Locked;
+		//Cursor.lockState = CursorLockMode.Locked;
 	}
 
 	// Make sure the camera movement happens after player's movement. Otherwise, the camera will jiggle.
-	void LateUpdate()	
+	void LateUpdate()
 	{
 		// Manual rotation
 		if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
@@ -88,19 +91,40 @@ public class ThirdPersonCamera : MonoBehaviour
 
 		cameraFocusPosition = cameraFocus.transform.position;
 		cameraDirection = cameraRotation * Vector3.forward;
+		currentCameraDistance = Vector3.Distance(cameraFocusPosition, transform.position);
 
 		boxCastHit = BoxCastFromTargetToCamera();
-
-		// When camera is too close -> change view to first person
+		
+		#region When the camera is too close
+		// change view to first person
 		if (boxCastHit && hit.distance < minCameraDistance)
 		{ hit.distance = 0f; }
+		if (Mathf.Approximately(desiredCameraDistance, minCameraDistance))
+		{ desiredCameraDistance = 0f; }
+		#endregion When the camera is too close
+
+		// No smooth when the camera zooms-in toward colliding point.
+		if (!smoothZoomInToCollisionPoint && boxCastHit && currentCameraDistance > hit.distance)
+		{ currentCameraDistance = hit.distance; }
+		
+		// Getting ease-out effect
+		if (boxCastHit)
+		{ currentLerpTime = 0f; }
+
+		currentLerpTime += Time.deltaTime * lerpSpeed;
+		currentLerpTime = Mathf.Clamp01(currentLerpTime);
+
+		float t = currentLerpTime;
+		t = 1f - Mathf.Cos(t * Mathf.PI * 0.5f);
+		t = Mathf.Sqrt(t);
+		t = Mathf.Clamp01(t);
 
 		// Smooth zoom-in and out on collision
-		currentCameraDistance = Vector3.Distance(cameraFocusPosition, transform.position);
 		currentCameraDistance = Mathf.Lerp(
 							currentCameraDistance,
 							(boxCastHit ? hit.distance : desiredCameraDistance),
-							lerpSpeed);
+							t);
+
 		desiredCameraPosition = cameraFocusPosition - cameraDirection * currentCameraDistance;
 
 		transform.SetPositionAndRotation(desiredCameraPosition, cameraRotation);
@@ -132,20 +156,29 @@ public class ThirdPersonCamera : MonoBehaviour
 
 	void ManualRotation()
 	{
-		Vector2 mouseInput = new Vector2(
-			(reverseYAxis ? -Input.GetAxis(mouseYId) : Input.GetAxis(mouseYId)),
-			Input.GetAxis(mouseXId));
-
-		cameraEulerAngle += rotateSpeed * Time.unscaledDeltaTime * mouseInput;
-		ConstrainAngles();
-
-		cameraRotation = Quaternion.Euler(cameraEulerAngle);
-
-		if (Input.GetMouseButton(1))
+		if (!Mathf.Approximately(Input.GetAxis(mouseXId), 0f) || !Mathf.Approximately(Input.GetAxis(mouseYId), 0f))
 		{
-			Vector3 cameraForward = transform.forward;
-			cameraForward.y = 0f;
-			player.transform.forward = cameraForward;
+			if (currentLerpTime >= 1f)
+			{ currentLerpTime = 0f; }
+
+			Vector2 mouseInput = new Vector2(
+								(reverseYAxis ? -Input.GetAxis(mouseYId) : Input.GetAxis(mouseYId)),
+								Input.GetAxis(mouseXId));
+
+			cameraEulerAngle += rotateSpeed * Time.unscaledDeltaTime * mouseInput;
+			ConstrainAngles();
+
+			cameraRotation = Quaternion.Euler(cameraEulerAngle);
+
+			// Moved this to PlayerInput.cs
+			//if (Input.GetMouseButton(1))
+			//{
+			//	Vector3 cameraForward = transform.forward;
+			//	cameraForward.y = 0f;
+			//	//player.transform.forward = cameraForward;
+			//	Quaternion lookRotation = Quaternion.LookRotation(cameraForward);
+			//	player.transform.rotation = Quaternion.Slerp(player.transform.rotation, lookRotation, Time.deltaTime * 5f);
+			//}
 		}
 	}
 
@@ -165,6 +198,8 @@ public class ThirdPersonCamera : MonoBehaviour
 
 	void Zoom()
 	{
+		currentLerpTime = lerpZoom ? lerpSpeed : 1f;
+
 		float wheelInput = Input.GetAxis(mouseWheelId);
 		desiredCameraDistance = currentCameraDistance;
 		desiredCameraDistance += (reverseZoom ? -wheelInput : wheelInput) * zoomSpeed;
