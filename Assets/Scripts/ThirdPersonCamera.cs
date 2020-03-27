@@ -13,7 +13,9 @@ public class ThirdPersonCamera : MonoBehaviour
 	Camera cam = null;
 	float currentCameraDistance;
 	float desiredCameraDistance = 8f;
-	Quaternion cameraRotation;
+	Quaternion desiredRotation;
+	Quaternion currentRotation;
+	float slerpRotationSpeed = .2f;
 	Vector2 cameraEulerAngle = new Vector2(45f, 0f);
 	Vector3 cameraDirection;
 	Vector3 cameraFocusPosition;
@@ -73,7 +75,7 @@ public class ThirdPersonCamera : MonoBehaviour
 	void Start()
 	{
 		// Set initial rotation
-		cameraRotation = Quaternion.Euler(cameraEulerAngle);
+		desiredRotation = Quaternion.Euler(cameraEulerAngle);
 
 		//Cursor.lockState = CursorLockMode.Locked;
 	}
@@ -81,20 +83,22 @@ public class ThirdPersonCamera : MonoBehaviour
 	// Make sure the camera movement happens after player's movement. Otherwise, the camera will jiggle.
 	void LateUpdate()
 	{
-		// Manual rotation
+		// Rotation
 		if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
 		{ ManualRotation(); }
 
+		currentRotation = Quaternion.Slerp(currentRotation, desiredRotation, slerpRotationSpeed);
+
 		// Zoom
-		if (Input.GetAxis(mouseWheelId) != 0f)
+		if (!Mathf.Approximately(Input.GetAxis(mouseWheelId), 0f))
 		{ Zoom(); }
 
 		cameraFocusPosition = cameraFocus.transform.position;
-		cameraDirection = cameraRotation * Vector3.forward;
+		cameraDirection = currentRotation * Vector3.forward;
 		currentCameraDistance = Vector3.Distance(cameraFocusPosition, transform.position);
 
 		boxCastHit = BoxCastFromTargetToCamera();
-		
+
 		#region When the camera is too close
 		// change view to first person
 		if (boxCastHit && hit.distance < minCameraDistance)
@@ -106,7 +110,7 @@ public class ThirdPersonCamera : MonoBehaviour
 		// No smooth when the camera zooms-in toward colliding point.
 		if (!smoothZoomInToCollisionPoint && boxCastHit && currentCameraDistance > hit.distance)
 		{ currentCameraDistance = hit.distance; }
-		
+
 		// Getting ease-out effect
 		if (boxCastHit)
 		{ currentLerpTime = 0f; }
@@ -127,7 +131,7 @@ public class ThirdPersonCamera : MonoBehaviour
 
 		desiredCameraPosition = cameraFocusPosition - cameraDirection * currentCameraDistance;
 
-		transform.SetPositionAndRotation(desiredCameraPosition, cameraRotation);
+		transform.SetPositionAndRotation(desiredCameraPosition, currentRotation);
 	}
 
 	private bool BoxCastFromTargetToCamera()
@@ -139,7 +143,7 @@ public class ThirdPersonCamera : MonoBehaviour
 					GetCameraHalfExtends(),
 					castDirection,
 					out hit,
-					cameraRotation,
+					desiredRotation,
 					castLine.magnitude,
 					whatToDetect
 					);
@@ -168,7 +172,8 @@ public class ThirdPersonCamera : MonoBehaviour
 			cameraEulerAngle += rotateSpeed * Time.unscaledDeltaTime * mouseInput;
 			ConstrainAngles();
 
-			cameraRotation = Quaternion.Euler(cameraEulerAngle);
+			desiredRotation = Quaternion.Euler(cameraEulerAngle);
+			currentRotation = desiredRotation;
 
 			// Moved this to PlayerInput.cs
 			//if (Input.GetMouseButton(1))
@@ -180,6 +185,13 @@ public class ThirdPersonCamera : MonoBehaviour
 			//	player.transform.rotation = Quaternion.Slerp(player.transform.rotation, lookRotation, Time.deltaTime * 5f);
 			//}
 		}
+	}
+
+	public void ManualRotation(Vector3 newRotation)
+	{
+		cameraEulerAngle += (Vector2)newRotation;
+		ConstrainAngles();
+		desiredRotation = Quaternion.Euler(cameraEulerAngle);
 	}
 
 	void ConstrainAngles()

@@ -6,9 +6,11 @@ public class Interactable : MonoBehaviour
 	public Transform interactionTransform => transform;
 
 	bool isFocus = false;
-	Transform player;
+	GameObject player;
 
 	bool hasInteracted = false;
+
+	public bool isItem = false;
 
 	public virtual void Interact()
 	{
@@ -20,7 +22,7 @@ public class Interactable : MonoBehaviour
 	{
 		if (isFocus && !hasInteracted)
 		{
-			float distance = Vector3.Distance(player.position, interactionTransform.position);
+			float distance = Vector3.Distance(player.transform.position, interactionTransform.position);
 			if (distance <= radius)
 			{
 				Interact();
@@ -29,14 +31,15 @@ public class Interactable : MonoBehaviour
 		}
 	}
 
-	public void OnFocused(Transform playerTransform)
+	public virtual void OnFocused(GameObject playerObject)
 	{
+		Debug.Log("Current Focus: " + gameObject.name);
 		isFocus = true;
-		player = playerTransform;
+		player = playerObject;
 		hasInteracted = false;
 	}
 
-	public void OnDefocused()
+	public virtual void OnDefocused()
 	{
 		isFocus = false;
 		player = null;

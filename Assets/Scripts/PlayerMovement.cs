@@ -1,7 +1,4 @@
-﻿using System;
-using System.Linq;
-using UnityEditor;
-using UnityEngine;
+﻿using UnityEngine;
 
 [RequireComponent(typeof(CharacterController))]
 public class PlayerMovement : MonoBehaviour
@@ -36,11 +33,14 @@ public class PlayerMovement : MonoBehaviour
 	public float runSpeed = 10f;
 	public bool forwardMultiply = false;
 	[SerializeField, Tooltip("Debug Only")] float forwardMultiplier = 1f;
-	[SerializeField, Tooltip("Debug Only")] float currentSpeed = 0f;
+	public float currentSpeed = 0f;
 
 	[Header("Turn")]
 	public float turnSpeed = 5f;
-	[NonSerialized] public Quaternion lookRotation;
+	public Quaternion lookRotation;
+	float time;
+	public float manualTurnFrequency = .5f;
+	public float turnDegreePerFrequency = 90f;
 
 	[Header("Jump")]
 	public float jumpHeight = 5f;
@@ -71,11 +71,9 @@ public class PlayerMovement : MonoBehaviour
 	public float impactDamping = 5f;
 	Vector3 impact = Vector3.zero;
 
-
+	// Follow
 	public Vector3 followDir;
-	//[Header("Interact")]
-	//public Interactable focus;
-
+	
 	// lecture
 	float Lerp(float a, float b, float t) => (1 - t) * a + b * t;
 	float InverseLerp(float a, float b, float v) => (v - a) / (b - a);
@@ -108,7 +106,14 @@ public class PlayerMovement : MonoBehaviour
 		#region Calculate Speed
 		if (controller.isGrounded && !isSliding)
 		{
-			currentSpeed = baseSpeed;
+			if (moveInput != Vector2.zero || followDir != Vector3.zero)
+			{
+				currentSpeed = baseSpeed;
+			}
+			else
+			{
+				currentSpeed = 0f;
+			}
 
 			if (runInput)
 			{ currentSpeed = runSpeed; }
@@ -153,9 +158,6 @@ public class PlayerMovement : MonoBehaviour
 		float yStore = velocity.y;
 		if (ControlMovementInAir)
 		{
-			//velocity = (groundDirection.forward * moveInput.y + groundDirection.right * moveInput.x) *
-			//			(currentSpeed * forwardMultiplier) + -fallDirection.up * fallSpeed;
-
 			velocity = (moveForwardDir * moveInput.y + moverightDir * moveInput.x + followDir) *
 						(currentSpeed * forwardMultiplier) + groundForwardDir * fallSpeed;
 		}
@@ -163,9 +165,6 @@ public class PlayerMovement : MonoBehaviour
 		{
 			if (controller.isGrounded)
 			{
-				//velocity = (groundDirection.forward * moveInput.y + groundDirection.right * moveInput.x) *
-				//			(currentSpeed * forwardMultiplier) + -fallDirection.up * fallSpeed;
-
 				velocity = (moveForwardDir * moveInput.y + moverightDir * moveInput.x + followDir) *
 							(currentSpeed * forwardMultiplier) + groundForwardDir * fallSpeed;
 			}
@@ -180,12 +179,8 @@ public class PlayerMovement : MonoBehaviour
 		controller.Move(velocity * Time.deltaTime);
 
 		// Turn
-		if (turnAxis != 0)
-		{ Turn(); }
-		// Turn to lookRotation
-		else
-		{ transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * turnSpeed); }
-			   
+		transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * turnSpeed);
+
 		// Ground Check
 		if (controller.isGrounded)
 		{
@@ -243,13 +238,6 @@ public class PlayerMovement : MonoBehaviour
 		//	direction.y *= -1f;
 		//}
 		impact += direction * force; // devide mass after multiplying force if there is a mass
-	}
-
-	private void Turn()
-	{
-		lookRotation = transform.rotation;
-		Vector3 characterRotation = transform.eulerAngles + new Vector3(0, turnAxis * turnSpeed, 0);
-		transform.eulerAngles = characterRotation;
 	}
 
 	private void OnControllerColliderHit(ControllerColliderHit hit)

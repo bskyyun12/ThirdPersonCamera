@@ -6,7 +6,7 @@ public class PlayerInput : MonoBehaviour
 {
 	private PlayerMovement playerMovement;
 	private PlayerController playerController;
-	private Camera playerCamera;
+	private ThirdPersonCamera playerCamera;
 
 	#region Input Ids
 	const string mouseWheelId = "Mouse ScrollWheel";
@@ -17,12 +17,14 @@ public class PlayerInput : MonoBehaviour
 	[Header("Input Control")]
 	public Controls controls;
 
+	float time;
+
 	private void Awake()
 	{
 		playerMovement = GetComponent<PlayerMovement>();
 
 		playerController = GetComponent<PlayerController>();
-		playerCamera = Camera.main;
+		playerCamera = Camera.main.GetComponent<ThirdPersonCamera>();
 	}
 
 	private void Update()
@@ -66,17 +68,39 @@ public class PlayerInput : MonoBehaviour
 		#endregion Right and Left
 
 		#region TurnRight and TurnLeft
-		// TurnRight
-		if (Input.GetKey(controls.turnRight))
-			playerMovement.turnAxis = 1;
-
-		// TurnLeft
-		if (Input.GetKey(controls.turnLeft))
+		// set time on Keydown
+		if (Input.GetKeyDown(controls.turnRight) || Input.GetKeyDown(controls.turnLeft))
 		{
+			if (Mathf.Approximately(time, Time.time)) // prevent spamming key
+			{
+				time = Time.time - playerMovement.manualTurnFrequency; // no initial delay
+			}
+		}
+
+		if (Input.GetKey(controls.turnRight) || Input.GetKey(controls.turnLeft))
+		{
+			// TurnRight
 			if (Input.GetKey(controls.turnRight))
-				playerMovement.turnAxis = 0;
-			else
-				playerMovement.turnAxis = -1;
+			{
+				playerMovement.turnAxis = 1;
+			}
+
+			// TurnLeft
+			if (Input.GetKey(controls.turnLeft))
+			{
+				if (Input.GetKey(controls.turnRight))
+					playerMovement.turnAxis = 0;
+				else
+					playerMovement.turnAxis = -1;
+			}
+
+			if (Time.time - time >= playerMovement.manualTurnFrequency)
+			{
+				time = Time.time;
+				Vector3 rotation = new Vector3(0, playerMovement.turnAxis * playerMovement.turnDegreePerFrequency, 0);
+				playerCamera.ManualRotation(rotation);
+				playerMovement.lookRotation.eulerAngles += rotation;
+			}
 		}
 
 		// TurnRight, TurnLeft nothing

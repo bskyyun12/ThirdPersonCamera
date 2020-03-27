@@ -36,7 +36,7 @@ public class PlayerController : MonoBehaviour
 				tempFocus = null;
 			}
 
-			focus.OnFocused(transform);
+			focus.OnFocused(gameObject);
 		}
 	}
 
@@ -86,7 +86,8 @@ public class PlayerController : MonoBehaviour
 
 		// Set FollowDir until it reaches the Target
 		playerMovement.followDir = (focusGroundPos - playerGroundPos).normalized;
-		if (Vector3.Distance(focusGroundPos, playerGroundPos) <= focus.radius)
+		float followDist = focus.radius * .8f; // Make sure the player goes into the focus' radius to Interact with
+		if (Vector3.Distance(focusGroundPos, playerGroundPos) <= followDist)
 		{ playerMovement.followDir = Vector3.zero; }
 
 		// Check if the player is looking at the Target already
@@ -101,7 +102,7 @@ public class PlayerController : MonoBehaviour
 			// Check if the Target is on left side or right side. if rightDot is minus, the target is on the left side
 			Vector3 rotation = new Vector3(0, turnAngleInDeg, 0);
 			float rightDot = Vector3.Dot(transform.right, (focusGroundPos - playerGroundPos).normalized);
-			transform.eulerAngles += rotation * Mathf.Sign(rightDot);
+			playerMovement.lookRotation.eulerAngles += rotation * Mathf.Sign(rightDot);
 		}
 	}
 
